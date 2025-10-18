@@ -26,8 +26,12 @@ namespace RW.StarCitizen.MappingAssist.UI
         public List<DeviceChoice> DeviceChoices { get; } = new();
         public DeviceChoice? SelectedDevice { get; set; }
         public System.Collections.ObjectModel.ObservableCollection<BindingRow> BindingRows { get; }
-    = new System.Collections.ObjectModel.ObservableCollection<BindingRow>();
+            = new System.Collections.ObjectModel.ObservableCollection<BindingRow>();
 
+        public System.Collections.ObjectModel.ObservableCollection<ButtonChoice> ButtonChoices { get; }
+            = new System.Collections.ObjectModel.ObservableCollection<ButtonChoice>();
+
+        public ButtonChoice? SelectedButtonChoice { get; set; }
         public MainWindow()
         {
             InitializeComponent();
@@ -61,6 +65,7 @@ namespace RW.StarCitizen.MappingAssist.UI
                     {
                         SelectedDevice = DeviceChoices[0];
                         CmbDevices.SelectedItem = SelectedDevice;
+                        BuildButtonChoices();
                         TxtPrefix.Text = SelectedDevice.Prefix;
                         RefreshBindingRows();
                         UpdateDeviceImage();
@@ -85,6 +90,43 @@ namespace RW.StarCitizen.MappingAssist.UI
             }
         }
 
+        #region choice builders
+        private void BuildButtonChoices()
+        {
+            ButtonChoices.Clear();
+
+            // Always offer "All"
+            ButtonChoices.Add(new ButtonChoice { Display = "All buttons" });
+
+            // If it's a Virpil device, include buttons 1..31 with human names
+            bool isVirpil = SelectedDevice != null &&
+                            (SelectedDevice.Product?.IndexOf("VPC", StringComparison.OrdinalIgnoreCase) ?? -1) >= 0;
+
+            if (isVirpil)
+            {
+                for (int i = 1; i <= 31; i++)
+                {
+                    var info = VirpilMappings.Get(i);
+                    var label = info != null ? $"Button {i} — {info.Name}" : $"Button {i}";
+                    ButtonChoices.Add(new ButtonChoice { ButtonNumber = i, Display = label });
+                }
+            }
+            else
+            {
+                // Unknown joystick/keyboard/mouse: at least offer numbers 1..31
+                for (int i = 1; i <= 31; i++)
+                    ButtonChoices.Add(new ButtonChoice { ButtonNumber = i, Display = $"Button {i}" });
+            }
+
+            // Standalone modifier filters
+            ButtonChoices.Add(new ButtonChoice { Modifier = "lalt", Display = "LALT" });
+            ButtonChoices.Add(new ButtonChoice { Modifier = "ralt", Display = "RALT" });
+
+            // Default to "All"
+            SelectedButtonChoice = ButtonChoices.FirstOrDefault();
+            CmbButtonFilter.ItemsSource = ButtonChoices;
+            CmbButtonFilter.SelectedItem = SelectedButtonChoice;
+        }
         private void BuildDeviceChoices()
         {
             DeviceChoices.Clear();
@@ -140,88 +182,21 @@ namespace RW.StarCitizen.MappingAssist.UI
             CmbDevices.ItemsSource = DeviceChoices;
         }
 
+        #endregion 
+        #region Handlers
+        private void CmbButtonFilter_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            SelectedButtonChoice = CmbButtonFilter.SelectedItem as ButtonChoice;
+            RefreshBindingRows(); // rebuild rows with the new filter
+        }
+
         private void CmbDevices_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             SelectedDevice = CmbDevices.SelectedItem as DeviceChoice;
             TxtPrefix.Text = SelectedDevice?.Prefix ?? "";
+            BuildButtonChoices();
             RefreshBindingRows();
             UpdateDeviceImage();
-        }
-
-        private void RefreshBindingRows()
-        {
-            BindingRows.Clear();
-            if (LoadedMaps == null || SelectedDevice == null)
-            {
-                BindingsGrid.ItemsSource = BindingRows;
-                BindingsGrid.Items.Refresh();
-                return;
-            }
-
-            string prefix = SelectedDevice.Prefix;
-            bool isVirpil = SelectedDevice.Product.IndexOf("VPC", StringComparison.OrdinalIgnoreCase) >= 0;
-
-            string appBase = AppDomain.CurrentDomain.BaseDirectory;
-            string imagesDir = System.IO.Path.Combine(appBase, "Resources", "Images");
-
-            foreach (var map in LoadedMaps.ActionMaps)
-            {
-                foreach (var action in map.Actions)
-                {
-                    foreach (var rb in action.Rebinds)
-                    {
-                        var input = (rb.Input ?? string.Empty).Trim();
-                        if (string.IsNullOrWhiteSpace(input)) continue;
-
-                        if (input.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                        {
-                            string humanName = "";
-                            BitmapImage? humanImg = null;
-
-                            var buttonNum = TryExtractButtonNumber(input);
-                            if (buttonNum.HasValue && isVirpil)
-                            {
-                                var info = VirpilMappings.Get(buttonNum.Value);
-                                if (info != null)
-                                {
-                                    humanName = info.Name;
-
-                                    // Try load the per-button image (Resources/Images/<filename>)
-                                    string full = System.IO.Path.Combine(imagesDir, info.ImageFile);
-                                    if (File.Exists(full))
-                                    {
-                                        var bmp = new BitmapImage();
-                                        bmp.BeginInit();
-                                        bmp.CacheOption = BitmapCacheOption.OnLoad;
-                                        bmp.UriSource = new Uri(full, UriKind.Absolute);
-                                        bmp.EndInit();
-                                        humanImg = bmp;
-                                    }
-                                }
-                            }
-
-                            BindingRows.Add(new BindingRow
-                            {
-                                ActionMap = map.Name,
-                                Action = action.Name,
-                                Input = input,
-                                HumanName = humanName,
-                                HumanImage = humanImg
-                            });
-                        }
-                    }
-                }
-            }
-
-            BindingsGrid.ItemsSource = BindingRows;
-            BindingsGrid.Items.Refresh();
-
-            TxtStatus.Text = $"Showing {BindingRows.Count} bindings for {SelectedDevice.DisplayName} ({SelectedDevice.Prefix}).";
-            // Auto-select first row so you see an image right away
-            if (BindingRows.Count > 0)
-            {
-                BindingsGrid.SelectedIndex = 0; // will trigger BindingsGrid_SelectionChanged
-            }
         }
         private void BindingsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -238,6 +213,166 @@ namespace RW.StarCitizen.MappingAssist.UI
 
             LoadRightSideImageFromResources(info.ImageFile, info.Name);
         }
+        #endregion
+
+        #region Refreshs
+        private void RefreshBindingRows()
+        {
+            BindingRows.Clear();
+
+            if (LoadedMaps == null || SelectedDevice == null)
+            {
+                TxtStatus.Text = "No device selected.";
+                return;
+            }
+
+            string prefix = SelectedDevice.Prefix;
+            bool isVirpil = SelectedDevice.Product.IndexOf("VPC", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            int? filterButton = SelectedButtonChoice?.ButtonNumber;
+            string? filterMod = SelectedButtonChoice?.Modifier?.ToLowerInvariant(); // "lalt" | "ralt" | null
+
+            foreach (var map in LoadedMaps.ActionMaps)
+            {
+                foreach (var action in map.Actions)
+                {
+                    foreach (var rb in action.Rebinds)
+                    {
+                        var input = (rb.Input ?? string.Empty).Trim();
+                        if (string.IsNullOrWhiteSpace(input)) continue;
+
+                        // Scope to selected device
+                        if (!input.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+
+                        // Apply filter:
+                        //  A) explicit modifier-only filter (LALT/RALT) -> show all using that modifier
+                        //  B) button filter -> include unmodified AND LALT+buttonNN AND RALT+buttonNN
+                        if (filterMod == "lalt" && input.IndexOf("lalt+", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        if (filterMod == "ralt" && input.IndexOf("ralt+", StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                        if (filterButton.HasValue)
+                        {
+                            var extracted = TryExtractButtonNumber(input);
+                            if (extracted != filterButton.Value) continue; // ensures Button 1 != Button 10
+                                                                           // modifier state (none/lalt/ralt) is all allowed here
+                        }
+
+                        string humanName = "";
+                        System.Windows.Media.Imaging.BitmapImage? humanImg = null;
+
+                        var buttonNum = TryExtractButtonNumber(input);
+                        if (buttonNum.HasValue && isVirpil)
+                        {
+                            var info = VirpilMappings.Get(buttonNum.Value);
+                            if (info != null)
+                            {
+                                humanName = info.Name;
+
+                                // tiny icon in the grid (optional; harmless if missing)
+                                try
+                                {
+                                    var uri = new Uri($"pack://siteoforigin:,,,/Resources/Images/{info.ImageFile}", UriKind.Absolute);
+                                    humanImg = new System.Windows.Media.Imaging.BitmapImage(uri);
+                                }
+                                catch { /* ignore */ }
+                            }
+                        }
+
+                        BindingRows.Add(new BindingRow
+                        {
+                            ActionMap = map.Name,
+                            Action = action.Name,
+                            Input = input,
+                            HumanName = humanName,
+                            HumanImage = humanImg
+                        });
+                    }
+                }
+            }
+
+            TxtStatus.Text =
+                $"Showing {BindingRows.Count} rows for {SelectedDevice.DisplayName} — " +
+                (filterButton.HasValue ? $"Button {filterButton}" :
+                 filterMod == "lalt" ? "LALT" :
+                 filterMod == "ralt" ? "RALT" : "All buttons");
+        }
+        /* private void RefreshBindingRows()
+         {
+             BindingRows.Clear();
+             if (LoadedMaps == null || SelectedDevice == null)
+             {
+                 BindingsGrid.ItemsSource = BindingRows;
+                 BindingsGrid.Items.Refresh();
+                 return;
+             }
+
+             string prefix = SelectedDevice.Prefix;
+             bool isVirpil = SelectedDevice.Product.IndexOf("VPC", StringComparison.OrdinalIgnoreCase) >= 0;
+
+             string appBase = AppDomain.CurrentDomain.BaseDirectory;
+             string imagesDir = System.IO.Path.Combine(appBase, "Resources", "Images");
+
+             foreach (var map in LoadedMaps.ActionMaps)
+             {
+                 foreach (var action in map.Actions)
+                 {
+                     foreach (var rb in action.Rebinds)
+                     {
+                         var input = (rb.Input ?? string.Empty).Trim();
+                         if (string.IsNullOrWhiteSpace(input)) continue;
+
+                         if (input.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                         {
+                             string humanName = "";
+                             BitmapImage? humanImg = null;
+
+                             var buttonNum = TryExtractButtonNumber(input);
+                             if (buttonNum.HasValue && isVirpil)
+                             {
+                                 var info = VirpilMappings.Get(buttonNum.Value);
+                                 if (info != null)
+                                 {
+                                     humanName = info.Name;
+
+                                     // Try load the per-button image (Resources/Images/<filename>)
+                                     string full = System.IO.Path.Combine(imagesDir, info.ImageFile);
+                                     if (File.Exists(full))
+                                     {
+                                         var bmp = new BitmapImage();
+                                         bmp.BeginInit();
+                                         bmp.CacheOption = BitmapCacheOption.OnLoad;
+                                         bmp.UriSource = new Uri(full, UriKind.Absolute);
+                                         bmp.EndInit();
+                                         humanImg = bmp;
+                                     }
+                                 }
+                             }
+
+                             BindingRows.Add(new BindingRow
+                             {
+                                 ActionMap = map.Name,
+                                 Action = action.Name,
+                                 Input = input,
+                                 HumanName = humanName,
+                                 HumanImage = humanImg
+                             });
+                         }
+                     }
+                 }
+             }
+
+             BindingsGrid.ItemsSource = BindingRows;
+             BindingsGrid.Items.Refresh();
+
+             TxtStatus.Text = $"Showing {BindingRows.Count} bindings for {SelectedDevice.DisplayName} ({SelectedDevice.Prefix}).";
+             // Auto-select first row so you see an image right away
+             if (BindingRows.Count > 0)
+             {
+                 BindingsGrid.SelectedIndex = 0; // will trigger BindingsGrid_SelectionChanged
+             }
+         }*/
+        #endregion
+
 
         private void LoadRightSideImageFromResources(string fileName, string caption)
         {

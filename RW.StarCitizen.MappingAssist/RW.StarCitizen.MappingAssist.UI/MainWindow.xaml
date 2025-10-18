@@ -38,12 +38,21 @@
                           SelectionChanged="CmbDevices_SelectionChanged"/>
                 <TextBlock Text="Prefix:" Margin="16,0,4,0" VerticalAlignment="Center"/>
                 <TextBlock x:Name="TxtPrefix" VerticalAlignment="Center" FontWeight="Bold"/>
+                <!-- NEW: button/modifier filter -->
+                <TextBlock Text="   Filter:" Margin="16,0,8,0" VerticalAlignment="Center"/>
+                <ComboBox x:Name="CmbButtonFilter"
+                          Width="260"
+                          ItemsSource="{Binding ButtonChoices}"
+                          DisplayMemberPath="Display"
+                          SelectedItem="{Binding SelectedButtonChoice, Mode=TwoWay}"
+                          SelectionChanged="CmbButtonFilter_SelectionChanged"/>
             </DockPanel>
 
             <!-- Row 2: Main content (Grid with bindings + side image) -->
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="571*"/>
+                    <ColumnDefinition Width="157*"/>
                     <ColumnDefinition Width="340"/>
                 </Grid.ColumnDefinitions>
 
@@ -56,7 +65,7 @@
                           ItemsSource="{Binding BindingRows}"
                           SelectionMode="Single"
                           SelectionUnit="FullRow"
-                          SelectionChanged="BindingsGrid_SelectionChanged">
+                          SelectionChanged="BindingsGrid_SelectionChanged" Grid.ColumnSpan="2">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Action Map" Binding="{Binding ActionMap}" Width="*"/>
                         <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="2*"/>
@@ -79,7 +88,7 @@
                 </DataGrid>
 
                 <!-- Side panel with image -->
-                <Border Grid.Column="1"
+                <Border Grid.Column="2"
                         Margin="12,0,0,0"
                         BorderBrush="#DDD" BorderThickness="1" CornerRadius="6" Padding="8">
                     <StackPanel>
